@@ -29,10 +29,14 @@ resident_blocks = assignments_df[assignments_df['Resident'] == resident]['Block'
 selected_block = st.sidebar.selectbox("Select the block you want to swap out of", resident_blocks)
 
 # Determine elective residents by block
-elective_by_block = {
-    int(block): set(rotation_df.columns[rotation_df.loc[:, str(block)] == "Elective"])
-    for block in range(1, 27)
-}
+elective_by_block = {}
+for block in range(1, 27):
+    col_name = str(block)
+    if col_name in rotation_df.columns:
+        elective_residents = rotation_df.index[rotation_df[col_name] == "Elective"].tolist()
+        elective_by_block[block] = set(elective_residents)
+    else:
+        elective_by_block[block] = set()
 
 # Determine eligible swaps
 def find_eligible_swaps(current_resident, current_block):
