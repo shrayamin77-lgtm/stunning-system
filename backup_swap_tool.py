@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 
-# Load backup schedule
 @st.cache_data
 def load_backup_schedule():
     df = pd.read_csv("backup_schedule_final.csv")
@@ -12,25 +11,20 @@ def load_backup_schedule():
 
 df = load_backup_schedule()
 
-# Streamlit UI
 st.title("🔄 Backup Block Swap Tool")
 st.write("Find residents to swap **backup blocks** with. Swaps must be between elective blocks only.")
 
-# Sidebar: Select your name
 resident_list = df["Resident"].unique()
 selected_resident = st.sidebar.selectbox("Your Name", sorted(resident_list))
 
-# Filter to only show blocks that the selected resident is assigned to
 resident_blocks = df[df["Resident"] == selected_resident]["block"].unique()
 selected_block = st.sidebar.selectbox("Block You Want to Swap Out", sorted(resident_blocks))
 
-# Check if user is on elective during selected block
 on_elective = df[(df["Resident"] == selected_resident) & (df["block"] == selected_block)]["On_Elective"].iloc[0]
 if not on_elective:
     st.error(f"⚠️ You are not on elective during Block {selected_block}. Swaps must involve elective blocks.")
     st.stop()
 
-# Find possible swap partners
 eligible_swaps = []
 
 for _, row in df.iterrows():
@@ -44,7 +38,6 @@ for _, row in df.iterrows():
     if other_block == selected_block:
         continue
 
-    # Both must be on elective
     is_current_elective = row["On_Elective"]
     is_other_block_elective_for_user = df[
         (df["Resident"] == selected_resident) & (df["block"] == other_block)
@@ -59,7 +52,6 @@ for _, row in df.iterrows():
         "Their Block Dates": other_date
     })
 
-# Display results
 if eligible_swaps:
     st.success(f"Found {len(eligible_swaps)} eligible swaps for Block {selected_block}:")
     st.dataframe(pd.DataFrame(eligible_swaps))
