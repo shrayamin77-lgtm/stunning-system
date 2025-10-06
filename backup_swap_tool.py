@@ -17,7 +17,11 @@ backup_long_df["block"] = backup_long_df["block"].astype(int)
 rotation_df.columns = rotation_df.columns.astype(str)
 
 elective_blocks = {
-    r: set(rotation_df.columns[rotation_df.loc[rotation_df["Name"] == r].eq("Elective").any()].astype(int))
+    r: set(
+    int(col)
+    for col in rotation_df.columns[1:]  # skip 'Name'
+    if rotation_df.loc[rotation_df["Name"] == r, col].values[0] == "Elective"
+)
     for r in backup_long_df["Resident"].unique()
 }
 
