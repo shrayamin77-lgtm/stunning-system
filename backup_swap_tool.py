@@ -1,68 +1,67 @@
 import streamlit as st
 import pandas as pd
 
-# Load backup and rotation schedules
+# Load backup schedule
 @st.cache_data
-def load_data():
-    backup_df = pd.read_csv("backup_schedule_final.csv")
-    rotation_df = pd.read_csv("rotation_schedule.csv", index_col=0)
-    return backup_df, rotation_df
+def load_backup_schedule():
+    df = pd.read_csv("backup_schedule_final.csv")
+    df.columns = df.columns.str.strip()
+    df["block"] = df["block"].astype(int)
+    df["Resident"] = df["Resident"].str.strip()
+    return df
 
-backup_df, rotation_df = load_data()
+df = load_backup_schedule()
 
-# Build list of all backup assignments
-assignments = []
-for _, row in backup_df.iterrows():
-    block = row['block']
-    date = row['date']
-    if pd.notna(row['1st Backup']):
-        assignments.append({'Resident': row['1st Backup'], 'Block': block, 'Date': date})
-    if pd.notna(row['2nd Backup']) and row['2nd Backup'] != '—':
-        assignments.append({'Resident': row['2nd Backup'], 'Block': block, 'Date': date})
-
-assignments_df = pd.DataFrame(assignments)
-
-# Sidebar – select resident and block
-st.sidebar.header("Backup Swap Finder")
-resident = st.sidebar.selectbox("Select your name", sorted(assignments_df['Resident'].unique()))
-resident_blocks = assignments_df[assignments_df['Resident'] == resident]['Block'].tolist()
-selected_block = st.sidebar.selectbox("Select the block you want to swap out of", resident_blocks)
-
-# Determine elective residents by block
-elective_by_block = {
-    int(block): set(rotation_df.columns[rotation_df.loc[:, str(block)] == "Elective"])
-    for block in range(1, 27)
-}
-
-# Determine eligible swaps
-def find_eligible_swaps(current_resident, current_block):
-    eligible = []
-    for _, row in assignments_df.iterrows():
-        other_resident = row['Resident']
-        other_block = row['Block']
-        other_date = row['Date']
-
-        if other_block == current_block:
-            continue
-        if current_resident not in elective_by_block.get(other_block, set()):
-            continue
-        if other_resident not in elective_by_block.get(current_block, set()):
-            continue
-
-        eligible.append({
-            "Swap With": other_resident,
-            "Their Block": other_block,
-            "Their Block Dates": other_date
-        })
-    return pd.DataFrame(eligible)
-
-# Display eligible swaps
+# Streamlit UI
 st.title("🔄 Backup Block Swap Tool")
-st.write(f"You're assigned as backup in **Block {selected_block}**.")
-swaps_df = find_eligible_swaps(resident, selected_block)
+st.write("Find residents to swap **backup blocks** with. Swaps must be between elective blocks only.")
 
-if not swaps_df.empty:
-    st.success("Here are your eligible swap options:")
-    st.dataframe(swaps_df)
+# Sidebar: Select your name
+resident_list = df["Resident"].unique()
+selected_resident = st.sidebar.selectbox("Your Name", sorted(resident_list))
+
+# Filter to only show blocks that the selected resident is assigned to
+resident_blocks = df[df["Resident"] == selected_resident]["block"].unique()
+selected_block = st.sidebar.selectbox("Block You Want to Swap Out", sorted(resident_blocks))
+
+# Check if user is on elective during selected block
+on_elective = df[(df["Resident"] == selected_resident) & (df["block"] == selected_block)]["On_Elective"].iloc[0]
+if not on_elective:
+    st.error(f"⚠️ You are not on elective during Block {selected_block}. Swaps must involve elective blocks.")
+    st.stop()
+
+# Find possible swap partners
+eligible_swaps = []
+
+for _, row in df.iterrows():
+    other_resident = row["Resident"]
+    other_block = row["block"]
+    other_date = row["date"]
+    other_on_elective = row["On_Elective"]
+
+    if other_resident == selected_resident:
+        continue
+    if other_block == selected_block:
+        continue
+
+    # Both must be on elective
+    is_current_elective = row["On_Elective"]
+    is_other_block_elective_for_user = df[
+        (df["Resident"] == selected_resident) & (df["block"] == other_block)
+    ]["On_Elective"]
+
+    if not is_current_elective or is_other_block_elective_for_user.empty or not is_other_block_elective_for_user.iloc[0]:
+        continue
+
+    eligible_swaps.append({
+        "Swap With": other_resident,
+        "Their Block": other_block,
+        "Their Block Dates": other_date
+    })
+
+# Display results
+if eligible_swaps:
+    st.success(f"Found {len(eligible_swaps)} eligible swaps for Block {selected_block}:")
+    st.dataframe(pd.DataFrame(eligible_swaps))
 else:
     st.warning("No eligible swaps found for your selected block.")
