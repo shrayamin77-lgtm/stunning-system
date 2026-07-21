@@ -30,7 +30,7 @@ role = st.radio("Select Your PGY Level:", ["Intern (PGY-1)", "Senior (PGY-2 / PG
 if role == "Intern (PGY-1)":
     matrix_file = "clean_schedule_matrix.csv"
     weekend_file = "weekend_coverage_schedule.csv"
-    backup_file = "backschedule.csv"
+    backup_file = "backup_schedule_final.csv"
 else:
     matrix_file = "senior_schedule_matrix.csv"
     weekend_file = "senior_weekend_coverage_schedule.csv"
@@ -59,27 +59,38 @@ def load_data(m_file, w_file, b_file):
 
 backup_df, matrix_df, weekend_df = load_data(matrix_file, weekend_file, backup_file)
 
+# Helper function to parse standard dates safely
+def parse_date_safe(date_str):
+    try:
+        return pd.to_datetime(date_str.strip()).date()
+    except Exception:
+        return None
+
 def is_on_elective(resident_name, range_str):
     """Checks if a resident is on Elective during a specific block date range."""
-    target_range = range_str.strip()
-    
+    try:
+        s_str, e_str = range_str.split("-")
+        target_start = parse_date_safe(s_str)
+    except Exception:
+        return False
+        
+    if not target_start:
+        return False
+
     matching_col = None
+    
+    # Match matrix column header by parsed start date
     for col in matrix_df.columns:
-        if col.strip().lower() == target_range.lower():
-            matching_col = col
-            break
-            
-    if not matching_col:
+        if col == "Resident": 
+            continue
         try:
-            target_start = pd.to_datetime(target_range.split("-")[0].strip())
-            for col in matrix_df.columns:
-                if col == "Resident": continue
-                col_start = pd.to_datetime(col.split("-")[0].strip())
-                if target_start == col_start:
-                    matching_col = col
-                    break
+            col_start_str = col.split("-")[0].strip()
+            col_start = parse_date_safe(col_start_str)
+            if col_start and col_start == target_start:
+                matching_col = col
+                break
         except Exception:
-            pass
+            continue
 
     if not matching_col:
         return False
@@ -101,18 +112,15 @@ def is_name_match(target_resident, scheduled_entry):
     target = clean_str(target_resident)
     entry = clean_str(scheduled_entry)
     
-    # Direct exact match (e.g. 'k singh' == 'k singh')
     if target == entry:
         return True
         
-    # Last name match if target is a single name (e.g. 'bai' in 'bai, rajashekar')
     target_parts = target.split()
     entry_parts = entry.split()
     
     if len(target_parts) == 1:
         return target_parts[0] in entry_parts
         
-    # If target has initials (e.g., 'k singh'), verify both initial and last name match
     if len(target_parts) > 1:
         return all(part in entry_parts for part in target_parts)
         
@@ -121,9 +129,12 @@ def is_name_match(target_resident, scheduled_entry):
 def get_weekend_shifts_in_range(resident_name, range_str):
     try:
         s_str, e_str = range_str.split("-")
-        s_dt = pd.to_datetime(s_str.strip())
-        e_dt = pd.to_datetime(e_str.strip())
+        s_dt = parse_date_safe(s_str)
+        e_dt = parse_date_safe(e_str)
     except Exception:
+        return []
+        
+    if not s_dt or not e_dt:
         return []
     
     working_dates = []
@@ -134,8 +145,8 @@ def get_weekend_shifts_in_range(resident_name, range_str):
             if not date_val or date_val.lower() == "nan":
                 continue
             
-            shift_dt = pd.to_datetime(date_val)
-            if s_dt <= shift_dt <= e_dt:
+            shift_dt = parse_date_safe(date_val)
+            if shift_dt and (s_dt <= shift_dt <= e_dt):
                 raw_coverage = str(row["Scheduled_Coverage"])
                 scheduled_names = [n.strip() for n in raw_coverage.split(",")]
                 
