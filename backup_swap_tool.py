@@ -30,7 +30,7 @@ role = st.radio("Select Your PGY Level:", ["Intern (PGY-1)", "Senior (PGY-2 / PG
 if role == "Intern (PGY-1)":
     matrix_file = "clean_schedule_matrix.csv"
     weekend_file = "weekend_coverage_schedule.csv"
-    backup_file = "backschedule.csv"
+    backup_file = "backup_schedule_final.csv"
 else:
     matrix_file = "senior_schedule_matrix.csv"
     weekend_file = "senior_weekend_coverage_schedule.csv"
@@ -46,6 +46,8 @@ def load_data(m_file, w_file, b_file):
         
         matrix_df = pd.read_csv(m_file)
         matrix_df["Resident"] = matrix_df["Resident"].astype(str).str.strip()
+        # Clean column headers
+        matrix_df.columns = [str(c).strip() for c in matrix_df.columns]
         
         weekend_df = pd.read_csv(w_file)
         weekend_df["Date"] = weekend_df["Date"].astype(str).str.strip()
@@ -58,46 +60,43 @@ def load_data(m_file, w_file, b_file):
 
 backup_df, matrix_df, weekend_df = load_data(matrix_file, weekend_file, backup_file)
 
-# Parse Block Intervals from Matrix
-block_intervals = []
-for col in matrix_df.columns:
-    if col == "Resident": 
-        continue
-    try:
-        start_str, end_str = col.split("-")
-        s_m, s_d = map(int, start_str.strip().split("/"))
-        e_m, e_d = map(int, end_str.strip().split("/"))
-        s_yr = 2026 if s_m >= 7 else 2027
-        e_yr = 2026 if e_m >= 7 else 2027
-        block_intervals.append({"column": col, "start": datetime(s_yr, s_m, s_d), "end": datetime(e_yr, e_m, e_d)})
-    except Exception: 
-        continue
-
-def get_matrix_col_for_date_range(range_str):
-    try:
-        start_date_str = range_str.split("-")[0].strip()
-        target_dt = pd.to_datetime(start_date_str)
-        for interval in block_intervals:
-            if interval["start"] <= target_dt <= interval["end"]:
-                return interval["column"]
-    except Exception: 
-        return None
-    return None
-
 def is_on_elective(resident_name, range_str):
-    matrix_col = get_matrix_col_for_date_range(range_str)
-    if not matrix_col: 
-        return True
+    """Checks if a resident is on Elective during a specific block date range."""
+    target_range = range_str.strip()
     
-    res_row = matrix_df[matrix_df["Resident"].str.lower() == resident_name.lower()]
-    if res_row.empty: 
+    # 1. Direct match with Matrix Column Header
+    matching_col = None
+    for col in matrix_df.columns:
+        if col.strip().lower() == target_range.lower():
+            matching_col = col
+            break
+            
+    # 2. Fallback: Parse start date if exact column header string fails
+    if not matching_col:
+        try:
+            target_start = pd.to_datetime(target_range.split("-")[0].strip())
+            for col in matrix_df.columns:
+                if col == "Resident": continue
+                col_start = pd.to_datetime(col.split("-")[0].strip())
+                if target_start == col_start:
+                    matching_col = col
+                    break
+        except Exception:
+            pass
+
+    # If column cannot be found in schedule matrix, fail safe (return False)
+    if not matching_col:
         return False
-    
-    val = str(res_row.iloc[0][matrix_col]).strip()
-    return val.lower() == "elective"
+
+    # Check resident's rotation in that column
+    res_row = matrix_df[matrix_df["Resident"].str.lower() == resident_name.strip().lower()]
+    if res_row.empty:
+        return False
+
+    rotation_val = str(res_row.iloc[0][matching_col]).strip()
+    return rotation_val.lower() == "elective"
 
 def normalize_name(name_str):
-    """Normalizes formatting without stripping distinguishing initials (e.g., 'G. Singh' -> 'g singh')."""
     cleaned = name_str.lower().replace(".", "").strip()
     cleaned = re.sub(r'\s+', ' ', cleaned)
     return cleaned
@@ -122,10 +121,8 @@ def get_weekend_shifts_in_range(resident_name, range_str):
             shift_dt = pd.to_datetime(date_val)
             if s_dt <= shift_dt <= e_dt:
                 raw_coverage = str(row["Scheduled_Coverage"])
-                # Split entries by comma
                 scheduled_list = [normalize_name(n) for n in raw_coverage.split(",")]
                 
-                # Exact normalized match prevents confusing G. Singh and K. Singh
                 for scheduled_name in scheduled_list:
                     if target_norm == scheduled_name:
                         working_dates.append(date_val)
