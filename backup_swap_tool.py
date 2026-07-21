@@ -30,7 +30,7 @@ role = st.radio("Select Your PGY Level:", ["Intern (PGY-1)", "Senior (PGY-2 / PG
 if role == "Intern (PGY-1)":
     matrix_file = "clean_schedule_matrix.csv"
     weekend_file = "weekend_coverage_schedule.csv"
-    backup_file = "backschedule.csv"
+    backup_file = "backup_schedule_final.csv"
 else:
     matrix_file = "senior_schedule_matrix.csv"
     weekend_file = "senior_weekend_coverage_schedule.csv"
@@ -59,18 +59,30 @@ def load_data(m_file, w_file, b_file):
 
 backup_df, matrix_df, weekend_df = load_data(matrix_file, weekend_file, backup_file)
 
-# Helper function to parse standard dates safely
-def parse_date_safe(date_str):
+def parse_academic_date(date_str):
+    """Safely converts date strings (with or without years) into accurate academic year dates."""
     try:
-        return pd.to_datetime(date_str.strip()).date()
+        clean_s = date_str.strip()
+        parts = clean_s.split("/")
+        month = int(parts[0])
+        day = int(parts[1])
+        
+        if len(parts) == 3:
+            year = int(parts[2])
+            if year < 100:
+                year += 2000
+        else:
+            year = 2026 if month >= 7 else 2027
+            
+        return datetime(year, month, day).date()
     except Exception:
         return None
 
 def is_on_elective(resident_name, range_str):
     """Checks if a resident is on Elective during a specific block date range."""
     try:
-        s_str, e_str = range_str.split("-")
-        target_start = parse_date_safe(s_str)
+        s_str = range_str.split("-")[0].strip()
+        target_start = parse_academic_date(s_str)
     except Exception:
         return False
         
@@ -79,13 +91,13 @@ def is_on_elective(resident_name, range_str):
 
     matching_col = None
     
-    # Match matrix column header by parsed start date
+    # Match matrix column header by comparing normalized start dates
     for col in matrix_df.columns:
         if col == "Resident": 
             continue
         try:
             col_start_str = col.split("-")[0].strip()
-            col_start = parse_date_safe(col_start_str)
+            col_start = parse_academic_date(col_start_str)
             if col_start and col_start == target_start:
                 matching_col = col
                 break
@@ -103,12 +115,10 @@ def is_on_elective(resident_name, range_str):
     return rotation_val.lower() == "elective"
 
 def clean_str(s):
-    """Helper to remove punctuation, extra spaces, and lowercase strings."""
     s = str(s).lower().replace(".", " ")
     return re.sub(r'\s+', ' ', s).strip()
 
 def is_name_match(target_resident, scheduled_entry):
-    """Flexible matching between resident names and weekend schedule entries."""
     target = clean_str(target_resident)
     entry = clean_str(scheduled_entry)
     
@@ -129,8 +139,8 @@ def is_name_match(target_resident, scheduled_entry):
 def get_weekend_shifts_in_range(resident_name, range_str):
     try:
         s_str, e_str = range_str.split("-")
-        s_dt = parse_date_safe(s_str)
-        e_dt = parse_date_safe(e_str)
+        s_dt = parse_academic_date(s_str)
+        e_dt = parse_academic_date(e_str)
     except Exception:
         return []
         
@@ -145,7 +155,7 @@ def get_weekend_shifts_in_range(resident_name, range_str):
             if not date_val or date_val.lower() == "nan":
                 continue
             
-            shift_dt = parse_date_safe(date_val)
+            shift_dt = parse_academic_date(date_val)
             if shift_dt and (s_dt <= shift_dt <= e_dt):
                 raw_coverage = str(row["Scheduled_Coverage"])
                 scheduled_names = [n.strip() for n in raw_coverage.split(",")]
