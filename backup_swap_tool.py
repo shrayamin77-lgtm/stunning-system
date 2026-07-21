@@ -29,7 +29,7 @@ role = st.radio("Select Your PGY Level:", ["Intern (PGY-1)", "Senior (PGY-2 / PG
 if role == "Intern (PGY-1)":
     matrix_file = "clean_schedule_matrix.csv"
     weekend_file = "weekend_coverage_schedule.csv"
-    backup_file = "backschedule.csv"
+    backup_file = "backup_schedule_final.csv"
 else:
     matrix_file = "senior_schedule_matrix.csv"
     weekend_file = "senior_weekend_coverage_schedule.csv"
@@ -100,11 +100,17 @@ def get_weekend_shifts_in_range(resident_name, range_str):
     
     working_dates = []
     for _, row in weekend_df.iterrows():
-        shift_dt = pd.to_datetime(row["Date"])
-        if s_dt <= shift_dt <= e_dt:
-            names = [n.strip().lower() for n in str(row["Scheduled_Coverage"]).split(",")]
-            if resident_name.lower() in names:
-                working_dates.append(row["Date"])
+        try:
+            date_val = str(row["Date"]).strip()
+            if not date_val or date_val.lower() == "nan":
+                continue
+            shift_dt = pd.to_datetime(date_val)
+            if s_dt <= shift_dt <= e_dt:
+                names = [n.strip().lower() for n in str(row["Scheduled_Coverage"]).split(",")]
+                if resident_name.lower() in names:
+                    working_dates.append(date_val)
+        except Exception:
+            continue
     return working_dates
 
 # --- USER INTERFACE & SEARCH LOGIC ---
