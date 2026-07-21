@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import re
 
 # --- SECURITY ---
 def check_password():
@@ -29,7 +30,7 @@ role = st.radio("Select Your PGY Level:", ["Intern (PGY-1)", "Senior (PGY-2 / PG
 if role == "Intern (PGY-1)":
     matrix_file = "clean_schedule_matrix.csv"
     weekend_file = "weekend_coverage_schedule.csv"
-    backup_file = "backup_schedule_final.csv"
+    backup_file = "backschedule.csv"
 else:
     matrix_file = "senior_schedule_matrix.csv"
     weekend_file = "senior_weekend_coverage_schedule.csv"
@@ -95,6 +96,12 @@ def is_on_elective(resident_name, range_str):
     val = str(res_row.iloc[0][matrix_col]).strip()
     return val.lower() == "elective"
 
+def normalize_name(name_str):
+    """Normalizes formatting without stripping distinguishing initials (e.g., 'G. Singh' -> 'g singh')."""
+    cleaned = name_str.lower().replace(".", "").strip()
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    return cleaned
+
 def get_weekend_shifts_in_range(resident_name, range_str):
     try:
         s_str, e_str = range_str.split("-")
@@ -104,7 +111,7 @@ def get_weekend_shifts_in_range(resident_name, range_str):
         return []
     
     working_dates = []
-    clean_user = resident_name.strip().lower()
+    target_norm = normalize_name(resident_name)
 
     for _, row in weekend_df.iterrows():
         try:
@@ -114,11 +121,13 @@ def get_weekend_shifts_in_range(resident_name, range_str):
             
             shift_dt = pd.to_datetime(date_val)
             if s_dt <= shift_dt <= e_dt:
-                raw_coverage = str(row["Scheduled_Coverage"]).lower()
-                scheduled_names = [n.strip() for n in raw_coverage.split(",")]
+                raw_coverage = str(row["Scheduled_Coverage"])
+                # Split entries by comma
+                scheduled_list = [normalize_name(n) for n in raw_coverage.split(",")]
                 
-                for name in scheduled_names:
-                    if clean_user == name or clean_user in name or name in clean_user:
+                # Exact normalized match prevents confusing G. Singh and K. Singh
+                for scheduled_name in scheduled_list:
+                    if target_norm == scheduled_name:
                         working_dates.append(date_val)
                         break
         except Exception:
