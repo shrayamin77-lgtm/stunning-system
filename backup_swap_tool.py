@@ -59,10 +59,11 @@ def load_data(m_file, w_file, b_file):
 
 backup_df, matrix_df, weekend_df = load_data(matrix_file, weekend_file, backup_file)
 
+# --- DATE PARSING HELPERS ---
 def parse_academic_date(date_str):
     """Safely converts date strings (with or without years) into accurate academic year dates."""
     try:
-        clean_s = date_str.strip()
+        clean_s = str(date_str).strip()
         parts = clean_s.split("/")
         month = int(parts[0])
         day = int(parts[1])
@@ -114,29 +115,8 @@ def is_on_elective(resident_name, range_str):
     rotation_val = str(res_row.iloc[0][matching_col]).strip()
     return rotation_val.lower() == "elective"
 
-def clean_str(s):
-    s = str(s).lower().replace(".", " ")
-    return re.sub(r'\s+', ' ', s).strip()
-
-def is_name_match(target_resident, scheduled_entry):
-    target = clean_str(target_resident)
-    entry = clean_str(scheduled_entry)
-    
-    if target == entry:
-        return True
-        
-    target_parts = target.split()
-    entry_parts = entry.split()
-    
-    if len(target_parts) == 1:
-        return target_parts[0] in entry_parts
-        
-    if len(target_parts) > 1:
-        return all(part in entry_parts for part in target_parts)
-        
-    return False
-
 def get_weekend_shifts_in_range(resident_name, range_str):
+    """Checks if a resident has assigned weekend floor coverage during a date range."""
     try:
         s_str, e_str = range_str.split("-")
         s_dt = parse_academic_date(s_str)
@@ -148,6 +128,7 @@ def get_weekend_shifts_in_range(resident_name, range_str):
         return []
     
     working_dates = []
+    target_clean = resident_name.strip().lower()
 
     for _, row in weekend_df.iterrows():
         try:
@@ -157,13 +138,9 @@ def get_weekend_shifts_in_range(resident_name, range_str):
             
             shift_dt = parse_academic_date(date_val)
             if shift_dt and (s_dt <= shift_dt <= e_dt):
-                raw_coverage = str(row["Scheduled_Coverage"])
-                scheduled_names = [n.strip() for n in raw_coverage.split(",")]
-                
-                for name in scheduled_names:
-                    if is_name_match(resident_name, name):
-                        working_dates.append(date_val)
-                        break
+                scheduled_resident = str(row["Scheduled_Coverage"]).strip().lower()
+                if target_clean == scheduled_resident:
+                    working_dates.append(date_val)
         except Exception:
             continue
             
