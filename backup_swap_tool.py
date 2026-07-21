@@ -36,7 +36,7 @@ else:
     weekend_file = "senior_weekend_coverage_schedule.csv"
     backup_file = "senior_backup_schedule_final.csv"
 
-# --- DATA LOADING ---
+# --- DATA LOADING & HARDENING ---
 @st.cache_data
 def load_data(m_file, w_file, b_file):
     try:
@@ -48,9 +48,24 @@ def load_data(m_file, w_file, b_file):
         matrix_df["Resident"] = matrix_df["Resident"].astype(str).str.strip()
         matrix_df.columns = [str(c).strip() for c in matrix_df.columns]
         
-        weekend_df = pd.read_csv(w_file)
-        weekend_df["Date"] = weekend_df["Date"].astype(str).str.strip()
-        weekend_df["Scheduled_Coverage"] = weekend_df["Scheduled_Coverage"].astype(str).str.strip()
+        # Custom reader for weekend coverage to handle any comma formatting issues
+        weekend_rows = []
+        with open(w_file, 'r', encoding='utf-8-sig') as f:
+            header = f.readline()
+            for line in f:
+                line = line.strip()
+                if not line: continue
+                parts = line.split(',', 1) # Split into date and remainder
+                if len(parts) == 2:
+                    d_val = parts[0].strip()
+                    cov_val = parts[1].strip()
+                    # If multiple comma-separated names exist on one line, explode them
+                    names = [n.strip() for n in cov_val.split(',')]
+                    for name in names:
+                        if name:
+                            weekend_rows.append({"Date": d_val, "Scheduled_Coverage": name})
+                            
+        weekend_df = pd.DataFrame(weekend_rows)
         
         return backup_df, matrix_df, weekend_df
     except Exception as e:
@@ -115,6 +130,12 @@ def is_on_elective(resident_name, range_str):
     rotation_val = str(res_row.iloc[0][matching_col]).strip()
     return rotation_val.lower() == "elective"
 
+def is_same_resident(target, candidate):
+    """Flexible check for last names and initials (e.g. 'G. Singh' vs 'g singh')."""
+    t = re.sub(r'\s+', ' ', str(target).lower().replace(".", " ")).strip()
+    c = re.sub(r'\s+', ' ', str(candidate).lower().replace(".", " ")).strip()
+    return t == c
+
 def get_weekend_shifts_in_range(resident_name, range_str):
     """Checks if a resident has assigned weekend floor coverage during a date range."""
     try:
@@ -128,7 +149,6 @@ def get_weekend_shifts_in_range(resident_name, range_str):
         return []
     
     working_dates = []
-    target_clean = resident_name.strip().lower()
 
     for _, row in weekend_df.iterrows():
         try:
@@ -138,8 +158,8 @@ def get_weekend_shifts_in_range(resident_name, range_str):
             
             shift_dt = parse_academic_date(date_val)
             if shift_dt and (s_dt <= shift_dt <= e_dt):
-                scheduled_resident = str(row["Scheduled_Coverage"]).strip().lower()
-                if target_clean == scheduled_resident:
+                scheduled_resident = str(row["Scheduled_Coverage"]).strip()
+                if is_same_resident(resident_name, scheduled_resident):
                     working_dates.append(date_val)
         except Exception:
             continue
