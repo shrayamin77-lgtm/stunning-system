@@ -29,7 +29,7 @@ role = st.radio("Select Your PGY Level:", ["Intern (PGY-1)", "Senior (PGY-2 / PG
 if role == "Intern (PGY-1)":
     matrix_file = "clean_schedule_matrix.csv"
     weekend_file = "weekend_coverage_schedule.csv"
-    backup_file = "backup_schedule_final.csv"
+    backup_file = "backschedule.csv"
 else:
     matrix_file = "senior_schedule_matrix.csv"
     weekend_file = "senior_weekend_coverage_schedule.csv"
