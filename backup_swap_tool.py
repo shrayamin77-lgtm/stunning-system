@@ -99,6 +99,127 @@ def get_weekend_shifts_in_range(resident_name, range_str):
         return []
     
     working_dates = []
+    clean_user = resident_name.strip().lower()
+
+    for _, row in weekend_df.iterrows():
+        try:
+            date_val = str(row["Date"]).strip()
+            if not date_val or date_val.lower() == "nan":
+                continue
+            
+            shift_dt = pd.to_datetime(date_val)
+            if s_dt <= shift_dt <= e_dt:
+                raw_coverage = str(row["Scheduled_Coverage"]).lower()
+                scheduled_names = [n.strip() for n in raw_coverage.split(",")]
+                
+                for name in scheduled_names:
+                    if clean_user == name or clean_user in name or name in clean_user:
+                        working_dates.append(date_val)
+                        break
+        except Exception:
+            continue
+            
+    return working_dates
+
+# --- USER INTERFACE & SEARCH LOGIC ---
+st.write("Find residents to swap **backup blocks** with. Both residents must be on **Elective** during their respective backup periods.")
+
+resident_list = sorted(backup_df["Resident"].unique())
+selected_resident = st.selectbox(f"Select Your Last Name ({role}):", resident_list)
+
+user_assignments = backup_df[backup_df["Resident"] == selected_resident]
+user_ranges = sorted(user_assignments["Date_Range"].unique())
+
+if user_ranges:
+    selected_range = st.selectbox("Select the Backup Period You Need to Swap Out Of:", user_ranges)
+    
+    if not is_on_elective(selected_resident, selected_range):
+        st.error(f"⚠️ You are not on Elective during {selected_range}. Swaps must involve Elective blocks.")
+        st.stop()
+        
+    if st.button("🔎 Search Backup Swaps"):
+        eligible_swaps = []
+        
+        for _, row in backup_df.iterrows():
+            other_resident = row["Resident"]
+            other_range = row["Date_Range"]
+            other_role = row["Backup_Role"]
+            
+            if other_resident == selected_resident or other_range == selected_range:
+                continue
+                
+            # Check reciprocal Elective status
+            other_on_elective_for_me = is_on_elective(other_resident, selected_range)
+            i_on_elective_for_them = is_on_elective(selected_resident, other_range)
+            
+            if other_on_elective_for_me and i_on_elective_for_them:
+                their_conflicts = get_weekend_shifts_in_range(other_resident, selected_range)
+                my_conflicts = get_weekend_shifts_in_range(selected_resident, other_range)
+                
+                if their_conflicts or my_conflicts:
+                    status = "🔴 Weekend Coverage Conflict"
+                    notes_list = []
+                    if their_conflicts:
+                        notes_list.append(f"{other_resident} works weekend: {', '.join(their_conflicts)}")
+                    if my_conflicts:
+                        notes_list.append(f"You work weekend: {', '.join(my_conflicts)}")
+                    notes = " | ".join(notes_list)
+                else:
+                    status = "🟢 Completely Free"
+                    notes = "No weekend floor shifts"
+
+                eligible_swaps.append({
+                    "Status": status,
+                    "Swap With": other_resident,
+                    "Their Backup Dates": other_range,
+                    "Their Role": other_role,
+                    "Conflict Details": notes
+                })
+                
+        if eligible_swaps:
+            st.success(f"✅ Found {len(eligible_swaps)} reciprocal backup swap options for {selected_range}:")
+            df_swaps = pd.DataFrame(eligible_swaps)
+            st.caption("🟢 **Green Dot:** Clear of weekend floor shifts. | 🔴 **Red Dot:** Elective verified, but has an assigned floor weekend during the block.")
+            st.table(df_swaps)
+        else:
+            st.warning("No eligible reciprocal backup swaps found for this period.")
+else:
+    st.info(f"No backup blocks currently assigned to **{selected_resident}**.")        s_m, s_d = map(int, start_str.strip().split("/"))
+        e_m, e_d = map(int, end_str.strip().split("/"))
+        s_yr = 2026 if s_m >= 7 else 2027
+        e_yr = 2026 if e_m >= 7 else 2027
+        block_intervals.append({"column": col, "start": datetime(s_yr, s_m, s_d), "end": datetime(e_yr, e_m, e_d)})
+    except Exception: continue
+
+def get_matrix_col_for_date_range(range_str):
+    try:
+        start_date_str = range_str.split("-")[0].strip()
+        target_dt = pd.to_datetime(start_date_str)
+        for interval in block_intervals:
+            if interval["start"] <= target_dt <= interval["end"]:
+                return interval["column"]
+    except: return None
+    return None
+
+def is_on_elective(resident_name, range_str):
+    matrix_col = get_matrix_col_for_date_range(range_str)
+    if not matrix_col: return True
+    
+    res_row = matrix_df[matrix_df["Resident"].str.lower() == resident_name.lower()]
+    if res_row.empty: return False
+    
+    val = str(res_row.iloc[0][matrix_col]).strip()
+    return val.lower() == "elective"
+
+def get_weekend_shifts_in_range(resident_name, range_str):
+    try:
+        s_str, e_str = range_str.split("-")
+        s_dt = pd.to_datetime(s_str.strip())
+        e_dt = pd.to_datetime(e_str.strip())
+    except:
+        return []
+    
+    working_dates = []
     for _, row in weekend_df.iterrows():
         try:
             date_val = str(row["Date"]).strip()
