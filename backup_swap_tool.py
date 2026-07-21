@@ -30,7 +30,7 @@ role = st.radio("Select Your PGY Level:", ["Intern (PGY-1)", "Senior (PGY-2 / PG
 if role == "Intern (PGY-1)":
     matrix_file = "clean_schedule_matrix.csv"
     weekend_file = "weekend_coverage_schedule.csv"
-    backup_file = "backup_schedule_final.csv"
+    backup_file = "backschedule.csv"
 else:
     matrix_file = "senior_schedule_matrix.csv"
     weekend_file = "senior_weekend_coverage_schedule.csv"
@@ -46,7 +46,6 @@ def load_data(m_file, w_file, b_file):
         
         matrix_df = pd.read_csv(m_file)
         matrix_df["Resident"] = matrix_df["Resident"].astype(str).str.strip()
-        # Clean column headers
         matrix_df.columns = [str(c).strip() for c in matrix_df.columns]
         
         weekend_df = pd.read_csv(w_file)
@@ -64,14 +63,12 @@ def is_on_elective(resident_name, range_str):
     """Checks if a resident is on Elective during a specific block date range."""
     target_range = range_str.strip()
     
-    # 1. Direct match with Matrix Column Header
     matching_col = None
     for col in matrix_df.columns:
         if col.strip().lower() == target_range.lower():
             matching_col = col
             break
             
-    # 2. Fallback: Parse start date if exact column header string fails
     if not matching_col:
         try:
             target_start = pd.to_datetime(target_range.split("-")[0].strip())
@@ -84,11 +81,9 @@ def is_on_elective(resident_name, range_str):
         except Exception:
             pass
 
-    # If column cannot be found in schedule matrix, fail safe (return False)
     if not matching_col:
         return False
 
-    # Check resident's rotation in that column
     res_row = matrix_df[matrix_df["Resident"].str.lower() == resident_name.strip().lower()]
     if res_row.empty:
         return False
@@ -96,10 +91,32 @@ def is_on_elective(resident_name, range_str):
     rotation_val = str(res_row.iloc[0][matching_col]).strip()
     return rotation_val.lower() == "elective"
 
-def normalize_name(name_str):
-    cleaned = name_str.lower().replace(".", "").strip()
-    cleaned = re.sub(r'\s+', ' ', cleaned)
-    return cleaned
+def clean_str(s):
+    """Helper to remove punctuation, extra spaces, and lowercase strings."""
+    s = str(s).lower().replace(".", " ")
+    return re.sub(r'\s+', ' ', s).strip()
+
+def is_name_match(target_resident, scheduled_entry):
+    """Flexible matching between resident names and weekend schedule entries."""
+    target = clean_str(target_resident)
+    entry = clean_str(scheduled_entry)
+    
+    # Direct exact match (e.g. 'k singh' == 'k singh')
+    if target == entry:
+        return True
+        
+    # Last name match if target is a single name (e.g. 'bai' in 'bai, rajashekar')
+    target_parts = target.split()
+    entry_parts = entry.split()
+    
+    if len(target_parts) == 1:
+        return target_parts[0] in entry_parts
+        
+    # If target has initials (e.g., 'k singh'), verify both initial and last name match
+    if len(target_parts) > 1:
+        return all(part in entry_parts for part in target_parts)
+        
+    return False
 
 def get_weekend_shifts_in_range(resident_name, range_str):
     try:
@@ -110,7 +127,6 @@ def get_weekend_shifts_in_range(resident_name, range_str):
         return []
     
     working_dates = []
-    target_norm = normalize_name(resident_name)
 
     for _, row in weekend_df.iterrows():
         try:
@@ -121,10 +137,10 @@ def get_weekend_shifts_in_range(resident_name, range_str):
             shift_dt = pd.to_datetime(date_val)
             if s_dt <= shift_dt <= e_dt:
                 raw_coverage = str(row["Scheduled_Coverage"])
-                scheduled_list = [normalize_name(n) for n in raw_coverage.split(",")]
+                scheduled_names = [n.strip() for n in raw_coverage.split(",")]
                 
-                for scheduled_name in scheduled_list:
-                    if target_norm == scheduled_name:
+                for name in scheduled_names:
+                    if is_name_match(resident_name, name):
                         working_dates.append(date_val)
                         break
         except Exception:
